@@ -11,14 +11,14 @@ from sklearn.metrics import confusion_matrix, classification_report
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchmetrics import F1Score
+from torchmetrics.functional import auc
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
 
-# Загрузка данных
-
-fnameDataBeta = r'D:\Nerobova_Anastasiya\DataTCGA\MatrixBetaNoNanNoBadCpGandPerson.pkl'
-fnameDataLabels = 'D:/Nerobova_Anastasiya/DataTCGA/markerList.txt'
-fnamesavegraph = r'D:\Nerobova_Anastasiya\DataTCGA\graph'
+fnameDataBeta = '/common/home/nerobova_a/DataMethy/MatrixBetaNoNanNoBadCpGandPerson.pkl'
+fnameDataLabels = '/common/home/nerobova_a/DataMethy/markerList.txt'
+fnamesavegraph = '/common/home/nerobova_a/DataMethy/output'
 
 
 def LoadingDataBeta(fnameDataBeta):
@@ -35,6 +35,13 @@ def LoadingDataBeta(fnameDataBeta):
 def returnSizeDataX(fnameDataBeta):
     X = LoadingDataBeta(fnameDataBeta)
     return X.shape[1]
+    
+
+def returnSizeDataY(fnameDataLabels):
+    dfLabels = pd.read_csv(fnameDataLabels, header=None)
+    dfLabels.rename(columns={0: 'labels'}, inplace=True)
+    return dfLabels.shape
+
 
 
 def LoadingDataLabels(fnameDataLabels):
@@ -46,9 +53,6 @@ def LoadingDataLabels(fnameDataLabels):
     print(dfLabels.head(), '\n')
 
     return dfLabels.values
-
-
-# разделение данных на train, test, val
 
 
 def CreateTrainValTest(fnameDataBeta, fnameDataLabels):
@@ -64,8 +68,6 @@ def CreateTrainValTest(fnameDataBeta, fnameDataLabels):
 
     return X_train, y_train, X_test, y_test, X_val, y_val
 
-
-# визуализация классов
 
 def get_class_distribution(obj):
     count_dict = {
@@ -103,19 +105,16 @@ def get_class_distribution(obj):
 
 
 def VisualClassData(y_train, y_val, y_test):
-    # Train
     a = get_class_distribution(y_train)
     print("Train barplot")
     sns_plot = sns.barplot(data=pd.DataFrame.from_dict([get_class_distribution(y_train)]).melt(), x="variable",
                 y="value")
     sns_plot.figure.savefig("output.png")
 
-    # Test
     print("Test barplot")
     sns.barplot(data=pd.DataFrame.from_dict([get_class_distribution(y_test)]).melt(), x="variable",
                 y="value")
 
-    # Val
     print("Val barplot")
     sns.barplot(data=pd.DataFrame.from_dict([get_class_distribution(y_val)]).melt(), x="variable",
                 y="value")
@@ -257,11 +256,22 @@ def TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EP
         'train': [],
         "val": []
     }
+    f1_stats = {
+        'train': [],
+        "val": []
+    }
+    auc_stats = {
+        'train': [],
+        "val": []
+    }
+    
+    f1 = F1Score(num_classes=25)
 
     for e in range(1, EPOCHS + 1):
-        # TRAINING
         train_epoch_loss = 0
         train_epoch_acc = 0
+        train_epoch_f1 = 0
+        train_epoch_auc = 0        
 
         model.train()
 
@@ -270,21 +280,29 @@ def TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EP
             optimizer.zero_grad()
 
             y_train_pred = model(X_train_batch)
+            
+            print('y_train_pred = ', y_train_pred.shape, 'y_train_batch = ', y_train_batch.shape)
 
             train_loss = criterion(y_train_pred, y_train_batch)
             train_acc = multi_acc(y_train_pred, y_train_batch)
+            train_f1 = f1(y_train_pred, y_train_batch)
+            #train_auc = auc(y_train_pred[1], y_train_batch)
+            
 
             train_loss.backward()
             optimizer.step()
 
             train_epoch_loss += train_loss.item()
             train_epoch_acc += train_acc.item()
+            train_epoch_f1 += train_f1.item()
+            #train_epoch_auc += train_auc.item()
 
-        # VALIDATION
         with torch.no_grad():
 
             val_epoch_loss = 0
             val_epoch_acc = 0
+            val_epoch_f1 = 0
+            val_epoch_auc = 0    
 
             model.eval()
             for X_val_batch, y_val_batch in val_loader:
@@ -294,17 +312,27 @@ def TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EP
 
                 val_loss = criterion(y_val_pred, y_val_batch)
                 val_acc = multi_acc(y_val_pred, y_val_batch)
+                val_f1 = f1(y_val_pred, y_val_batch)
+                #val_auc = auc(y_val_pred[1], y_val_batch)
 
                 val_epoch_loss += val_loss.item()
                 val_epoch_acc += val_acc.item()
+                val_epoch_f1 += val_f1.item()
+                #val_epoch_auc += val_auc.item()  
 
+                
         loss_stats['train'].append(train_epoch_loss / len(train_loader))
         loss_stats['val'].append(val_epoch_loss / len(val_loader))
         accuracy_stats['train'].append(train_epoch_acc / len(train_loader))
         accuracy_stats['val'].append(val_epoch_acc / len(val_loader))
+        f1_stats['train'].append(train_epoch_f1 / len(train_loader))
+        f1_stats['val'].append(val_epoch_f1 / len(val_loader))
+        #auc_stats['train'].append(train_epoch_auc / len(train_loader))
+        #auc_stats['val'].append(val_epoch_auc / len(val_loader))
+                
 
-        print(
-            f'Epoch {e + 0:03}: | Train Loss: {train_epoch_loss / len(train_loader):.5f} | Val Loss: {val_epoch_loss / len(val_loader):.5f} | Train Acc: {train_epoch_acc / len(train_loader):.3f}| Val Acc: {val_epoch_acc / len(val_loader):.3f}')
+        # print(
+            # f'Epoch {e + 0:03}: | Train Loss: {train_epoch_loss / len(train_loader):.5f} | Val Loss: {val_epoch_loss / len(val_loader):.5f} | Train Acc: {train_epoch_acc / len(train_loader):.3f}| Val Acc: {val_epoch_acc / len(val_loader):.3f}')
 
     i = 0
     for X_train_batch, y_train_batch in train_loader:
@@ -316,7 +344,7 @@ def TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EP
         if i == 0:
             break
 
-    return accuracy_stats, loss_stats
+    return accuracy_stats, loss_stats, f1_stats
 
 
 def ModelTest(test_loader, model, device):
@@ -337,8 +365,8 @@ def ModelTest(test_loader, model, device):
 
 def main():
 
-    EPOCHS = 7
-    BATCH_SIZE = 16
+    EPOCHS = 500
+    BATCH_SIZE = 20
     LEARNING_RATE = 0.001
     NUM_FEATURES = returnSizeDataX(fnameDataBeta)
     NUM_CLASSES = 25
@@ -356,24 +384,36 @@ def main():
 
     model, criterion, optimizer = ModelCreate(class_weights, device, NUM_FEATURES, NUM_CLASSES, LEARNING_RATE)
 
-    accuracy_stats, loss_stats = TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EPOCHS)
+    accuracy_stats, loss_stats, f1_stats = TrainModel(train_loader, val_loader, model, criterion, optimizer, device, EPOCHS)
 
-    # Create dataframes
     train_val_acc_df = pd.DataFrame.from_dict(accuracy_stats).reset_index().melt(id_vars=['index']).rename(
         columns={"index": "epochs"})
     train_val_loss_df = pd.DataFrame.from_dict(loss_stats).reset_index().melt(id_vars=['index']).rename(
         columns={"index": "epochs"})
+        
+    train_val_f1_df = pd.DataFrame.from_dict(f1_stats).reset_index().melt(id_vars=['index']).rename(
+        columns={"index": "epochs"})
+    #train_val_auroc_df = pd.DataFrame.from_dict(auc_stats).reset_index().melt(id_vars=['index']).rename(
+     #   columns={"index": "epochs"})
 
-    # Plot the dataframes
     fig, ax = plt.subplots()
     sns.lineplot(data=train_val_acc_df, x="epochs", y="value", hue="variable").set_title(
         'Train-Val Accuracy/Epoch')
     fig.savefig(fnamesavegraph + '/graph_' + 'train_val_acc_df.png')
+    plt.close()
 
     fig, ax = plt.subplots()
     sns.lineplot(data=train_val_loss_df, x="epochs", y="value", hue="variable").set_title(
         'Train-Val Loss/Epoch')
     fig.savefig(fnamesavegraph + '/graph_' + 'train_val_loss_df.png')
+    plt.close()  
+    
+    fig, ax = plt.subplots()
+    sns.lineplot(data=train_val_f1_df, x="epochs", y="value", hue="variable").set_title(
+        'Train-Val Loss/Epoch')
+    fig.savefig(fnamesavegraph + '/graph_' + 'train_val_f1_df.png')
+    plt.close()  
+    
 
     """
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(20,7))
@@ -388,8 +428,9 @@ def main():
     y_pred_list = ModelTest(test_loader, model, device)
 
     confusion_matrix_df = pd.DataFrame(
-        confusion_matrix(y_test, y_pred_list))  # rename(columns=idx2class, index=idx2class)
+        confusion_matrix(y_test, y_pred_list)) 
 
+    fig, ax = plt.subplots()
     sns.heatmap(confusion_matrix_df, annot=True)
     fig.savefig(fnamesavegraph + '/graph_' + 'matrix.png')
     print(classification_report(y_test, y_pred_list))
