@@ -1,0 +1,14 @@
+{
+"meta":{"test_sets":["eval_dataset"],"test_metrics":[{"best_value":"Min","name":"MultiClass"}],"learn_metrics":[],"launch_mode":"Eval","parameters":"","iteration_count":10,"learn_sets":[],"name":""},
+"iterations":[
+{"iteration":0,"eval_dataset":[2.849338146]},
+{"iteration":1,"eval_dataset":[2.436816677]},
+{"iteration":2,"eval_dataset":[2.17835248]},
+{"iteration":3,"eval_dataset":[1.905996045]},
+{"iteration":4,"eval_dataset":[1.780109841]},
+{"iteration":5,"eval_dataset":[1.640961707]},
+{"iteration":6,"eval_dataset":[1.538575807]},
+{"iteration":7,"eval_dataset":[1.488558382]},
+{"iteration":8,"eval_dataset":[1.433345042]},
+{"iteration":9,"eval_dataset":[1.342428875]}
+]}
