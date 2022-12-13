@@ -1,7 +1,8 @@
-import xgboost
-import catboost
-import lightgbm
-import tabnet.tabnet_model as tb
+import models.catboost.catboost_
+import models.lightgbm.lightgbm_
+import models.tabnet.tabnet_model as tb
+import models.xgboost.xgb_model as xgbmodel
+import models.catboost.cat_model as catmodel
 
 import numpy as np
 import pandas as pd
@@ -13,10 +14,13 @@ from tqdm.notebook import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 
+import globalConstants
+from loadCreateData.CreateTrainTestData import getDataTrainValFromCrossVal, getDataTrainValFromCrossValTest
+import torchmetrics
 
-fnameDataBeta = r'E:\train_meth\X_val.pickle'
-fnameDataLabels = r'E:\train_meth\y_val.pickle'
-fnamesavegraph = r'E:\train_meth'
+# fnameDataBeta = r'E:\train_meth\X_val.pickle'
+# fnameDataLabels = r'E:\train_meth\y_val.pickle'
+# fnamesavegraph = r'E:\train_meth'
 
 
 # def LoadingDataBeta(fnameDataBeta):
@@ -49,30 +53,31 @@ fnamesavegraph = r'E:\train_meth'
 #     return dfLabels.values
 
 
-def LoadingDataBeta(fnameDataBeta):
-    with open(fnameDataBeta, 'rb') as f:
+def LoadingDataBeta():
+    with open(globalConstants.fnameDataBeta, 'rb') as f:
         f_new = pickle.load(f)
     dfDataBeta = pd.DataFrame(f_new)
     dfDataBeta = dfDataBeta.iloc[:, :500]
     categorical_features_indices = np.where(dfDataBeta.dtypes != float)[0]
-    return dfDataBeta.values, list(dfDataBeta.columns.values), categorical_features_indices
+    DataBetaNamePerson = list(dfDataBeta.index)
+
+    return dfDataBeta.values, DataBetaNamePerson #list(dfDataBeta.columns.values), categorical_features_indices
 
 
-def returnSizeDataX(fnameDataBeta):
-    X, feature_names, categorical_features_indices = LoadingDataBeta(fnameDataBeta)
+def returnSizeDataX():
+    X, feature_names, categorical_features_indices = LoadingDataBeta(globalConstants.fnameDataBeta)
     return X.shape[1], feature_names, categorical_features_indices
 
 
-def LoadingDataLabels(fnameDataLabels):
-    with open(fnameDataLabels, 'rb') as f:
+def LoadingDataLabels():
+    with open(globalConstants.fnameDataLabels, 'rb') as f:
         dfLabels = pickle.load(f)
     return dfLabels
 
 
-def CreateTrainTest(fnameDataBeta, fnameDataLabels):
-    X, feature_names, categorical_features_indices = LoadingDataBeta(fnameDataBeta)
-    y = LoadingDataLabels(fnameDataLabels)
-
+def CreateTrainTest():
+    X, DataBetaNamePerson = LoadingDataBeta()
+    y = LoadingDataLabels()
     X_train, X_trainval, y_train, y_trainval = train_test_split(X, y, train_size=0.7, stratify=y, random_state=42)
     X_test, X_val, y_test, y_val = train_test_split(X_trainval, y_trainval, test_size=0.5, stratify=y_trainval,
                                                     random_state=42)
@@ -80,7 +85,7 @@ def CreateTrainTest(fnameDataBeta, fnameDataLabels):
     y_train, y_val, y_test = np.asarray(y_train).reshape(-1), np.asarray(y_val).reshape(-1), np.asarray(y_test).reshape(
         -1)
 
-    return X_train, y_train, X_test, y_test, X_val, y_val, feature_names, categorical_features_indices
+    return X_train, y_train, X_test, y_test, X_val, y_val
 
 
 def f1_metrix(y_train, train_preds, y_test, test_preds):
@@ -93,7 +98,7 @@ def confusion_matrix_plot(y_test, y_pred, name):
 
     fig, ax = plt.subplots()
     sns.heatmap(confusion_matrix_df, annot=True)
-    fig.savefig(fnamesavegraph + '/graph_' + name + 'matrix.png')
+    fig.savefig(globalConstants.fnamesavegraph + '/graph_' + name + 'matrix.png')
     plt.close()
 
 
@@ -114,7 +119,7 @@ def auc_graph(y_test, proba_test, y_train, proba_train, name):
     plt.ylim([0, 1])
     plt.ylabel('True Positive Rate')
     plt.xlabel('False Positive Rate')
-    fig.savefig(fnamesavegraph + '/graph_' + name + '_auc.png')
+    fig.savefig(globalConstants.fnamesavegraph + '/graph_' + name + '_auc.png')
     plt.close()
 
 
@@ -124,69 +129,69 @@ def loss_graph(max_epochs, history_loss, name):
     sns.lineplot(range(max_epochs), history_loss)
     plt.ylabel('epochs')
     plt.xlabel('False Positive Rate')
-    fig.savefig(fnamesavegraph + '/graph_' + name + '_loss.png')
+    fig.savefig(globalConstants.fnamesavegraph + '/graph_' + name + '_loss.png')
     plt.close()
 
 
-def xgboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
-    test_preds, train_preds, proba_test, proba_train = xgboost.xgboost_.xgboost_train(X_train, y_train, X_test, y_test,
-                                                                                   X_val, y_val, feature_names, n_class)
-    confusion_matrix_plot(y_test, test_preds, 'xgboost_train')
-    print('xgboost_train')
-    f1_metrix(y_train, train_preds, y_test, test_preds)
-    auc_graph(y_test, proba_test, y_train, proba_train, 'xgboost_train')
-
-    y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss1 = xgboost.xgboost_.xgboost_XGBClassifier(X_train, y_train, X_test, y_test,
-                                                                                  X_val, y_val, n_class, max_epochs,
-                                                                                  batch_size)
-    confusion_matrix_plot(y_test, y_pred_test1, 'xgboost_XGBClassifier')
-
-    print('XGBClassifier')
-    f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
-    loss_graph(max_epochs, history_loss1, 'XGBClassifier')
-    auc_graph(y_test, proba_test1, y_train, proba_train1, 'XGBClassifier')
-
-
-def catboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
-    iterations = 150
-    y_pred_test, y_pred_train, proba_test, proba_train, history_loss = catboost.catboost_.catboost_CatBoost(X_train, y_train, X_test, y_test,
-                                                                               X_val, y_val, feature_names, n_class,
-                                                                               iterations, max_epochs, batch_size)
-    confusion_matrix_plot(y_test, y_pred_test, 'catboost_CatBoost')
-
-    print('CatBoost_train')
-    f1_metrix(y_train, y_pred_train, y_test, y_pred_test)
-    loss_graph(max_epochs, history_loss, 'CatBoost')
-    auc_graph(y_test, proba_test, y_train, proba_train, 'CatBoost')
-
-    y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss1 = catboost.catboost_.catboost_CatBoostClassifier(X_train, y_train, X_test,
-                                                                                           y_test, X_val, y_val,
-                                                                                           iterations, max_epochs,
-                                                                                           batch_size)
-    confusion_matrix_plot(y_test, y_pred_test1, 'catboost_CatBoostClassifier')
-
-    print('CatBoostClassifier')
-    f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
-    loss_graph(max_epochs, history_loss1, 'CatBoostClassifie')
-    auc_graph(y_test, proba_test1, y_train, proba_train1, 'CatBoostClassifie')
-
-
-def lightgbm_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
-    y_pred_test, y_pred_train, proba_test, proba_train = lightgbm.lightgbm_.lightgbm_train(X_train, y_train, X_test, y_test, X_val, y_val,
-                                                              feature_names, n_class)
-    confusion_matrix_plot(y_test, y_pred_test, 'lightgbm_train')
-    print('lightgbm_train')
-    f1_metrix(y_train, y_pred_train, y_test, y_pred_test)
-    auc_graph(y_test, proba_test, y_train, proba_train, 'lightgbm_train')
-
-    y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss = lightgbm.lightgbm_.lightgbm_LGBMClassifier(X_train, y_train, X_test, y_test,
-                                                                                       X_val, y_val, n_class,
-                                                                                       max_epochs, batch_size)
-    confusion_matrix_plot(y_test, y_pred_test1, 'lightgbm_LGBMClassifier')
-    print('LGBMClassifier')
-    f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
-    loss_graph(max_epochs, history_loss, 'LGBMClassifier')
-    auc_graph(y_test, proba_test1, y_train, proba_train1, 'LGBMClassifier')
+# def xgboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
+#     test_preds, train_preds, proba_test, proba_train = xgb.xgboost_train_(X_train, y_train, X_test, y_test,
+#                                                                                    X_val, y_val, feature_names, n_class)
+#     confusion_matrix_plot(y_test, test_preds, 'xgboost_train')
+#     print('xgboost_train')
+#     f1_metrix(y_train, train_preds, y_test, test_preds)
+#     auc_graph(y_test, proba_test, y_train, proba_train, 'xgboost_train')
+#
+#     y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss1 = xgb.xgboost_XGBClassifier(X_train, y_train, X_test, y_test,
+#                                                                                   X_val, y_val, n_class, max_epochs,
+#                                                                                   batch_size)
+#     confusion_matrix_plot(y_test, y_pred_test1, 'xgboost_XGBClassifier')
+#
+#     print('XGBClassifier')
+#     f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
+#     loss_graph(max_epochs, history_loss1, 'XGBClassifier')
+#     auc_graph(y_test, proba_test1, y_train, proba_train1, 'XGBClassifier')
+#
+#
+# def catboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
+#     iterations = 150
+#     y_pred_test, y_pred_train, proba_test, proba_train, history_loss = catboost.catboost_.catboost_CatBoost(X_train, y_train, X_test, y_test,
+#                                                                                X_val, y_val, feature_names, n_class,
+#                                                                                iterations, max_epochs, batch_size)
+#     confusion_matrix_plot(y_test, y_pred_test, 'catboost_CatBoost')
+#
+#     print('CatBoost_train')
+#     f1_metrix(y_train, y_pred_train, y_test, y_pred_test)
+#     loss_graph(max_epochs, history_loss, 'CatBoost')
+#     auc_graph(y_test, proba_test, y_train, proba_train, 'CatBoost')
+#
+#     y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss1 = catboost.catboost_.catboost_CatBoostClassifier(X_train, y_train, X_test,
+#                                                                                            y_test, X_val, y_val,
+#                                                                                            iterations, max_epochs,
+#                                                                                            batch_size)
+#     confusion_matrix_plot(y_test, y_pred_test1, 'catboost_CatBoostClassifier')
+#
+#     print('CatBoostClassifier')
+#     f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
+#     loss_graph(max_epochs, history_loss1, 'CatBoostClassifie')
+#     auc_graph(y_test, proba_test1, y_train, proba_train1, 'CatBoostClassifie')
+#
+#
+# def lightgbm_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size):
+#     y_pred_test, y_pred_train, proba_test, proba_train = lightgbm.lightgbm_.lightgbm_train(X_train, y_train, X_test, y_test, X_val, y_val,
+#                                                               feature_names, n_class)
+#     confusion_matrix_plot(y_test, y_pred_test, 'lightgbm_train')
+#     print('lightgbm_train')
+#     f1_metrix(y_train, y_pred_train, y_test, y_pred_test)
+#     auc_graph(y_test, proba_test, y_train, proba_train, 'lightgbm_train')
+#
+#     y_pred_test1, y_pred_train1, proba_test1, proba_train1, history_loss = lightgbm.lightgbm_.lightgbm_LGBMClassifier(X_train, y_train, X_test, y_test,
+#                                                                                        X_val, y_val, n_class,
+#                                                                                        max_epochs, batch_size)
+#     confusion_matrix_plot(y_test, y_pred_test1, 'lightgbm_LGBMClassifier')
+#     print('LGBMClassifier')
+#     f1_metrix(y_train, y_pred_train1, y_test, y_pred_test1)
+#     loss_graph(max_epochs, history_loss, 'LGBMClassifier')
+#     auc_graph(y_test, proba_test1, y_train, proba_train1, 'LGBMClassifier')
 
 
 def tabnet_main(X_train, y_train, X_test, y_test, X_val, y_val, max_epochs, batch_size):
@@ -199,19 +204,25 @@ def tabnet_main(X_train, y_train, X_test, y_test, X_val, y_val, max_epochs, batc
     # loss_graph(max_epochs, history_loss, 'TabNetMultiTaskClassifier')
     # auc_graph(y_test, proba_test, y_train, proba_train, 'LGBMClassifier')
     LEARNING_RATE = 0.7
-    tb.CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, batch_size, LEARNING_RATE, max_epochs, fnamesavegraph)
+    tb.CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, batch_size, LEARNING_RATE, max_epochs, globalConstants.fnamesavegraph)
 
 
 def main():
-    n_class = 25
-    max_epochs = 50
-    batch_size = 64
+    n_class = globalConstants.NUM_CLASSES
+    max_epochs = globalConstants.EPOCHS
+    batch_size = globalConstants.BATCH_SIZE
 
-    X_train, y_train, X_test, y_test, X_val, y_val, feature_names, categorical_features_indices = CreateTrainTest(fnameDataBeta, fnameDataLabels)
-    #xgboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size)
+    XTrainCrossVal, yTrainCrossVal, XValCrossVal, yValCrossVal, DataBetaNamePersonTrainSet, DataBetaNamePersonTestSet = getDataTrainValFromCrossValTest()
+    xgbmodel.getTablesGraphXGBoost(XTrainCrossVal, yTrainCrossVal, XValCrossVal, yValCrossVal, DataBetaNamePersonTrainSet, DataBetaNamePersonTestSet)
+
+    #xgbmodel.getTablesGraphXGBoost(X_train, y_train, X_val, y_val)
+    #xgbmodel.getTablesGraphXGBoost(XTrainCrossVal, yTrainCrossVal, XValCrossVal, yValCrossVal)
+
+
+    #catmodel.CatBoostTrainModel(X_train, y_train, X_val, y_val, X_test, y_test)
     #catboost_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size)
     #lightgbm_main(X_train, y_train, X_test, y_test, X_val, y_val, feature_names, n_class, max_epochs, batch_size)
-    tabnet_main(X_train, y_train, X_test, y_test, X_val, y_val, max_epochs, batch_size)
+    #tabnet_main(X_train, y_train, X_test, y_test, X_val, y_val, max_epochs, batch_size)
 
 
 if __name__ == "__main__":

@@ -2,13 +2,23 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, recall_score
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
-from tabnet.tabnetClass import TabNetModelClassification
+from models.tabnet.tabnetClass import TabNetModelClassification
+# подключение параметров модели
+import globalConstants
+# подключение модуля с метриками
+#from metrixsPyTorch import multi_acc
+
+
+class2idx = {3: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5}
+
+idx2class = {v: k for k, v in class2idx.items()}
 
 
 def get_class_distribution_new(obj):
@@ -51,10 +61,8 @@ def get_class_distribution(obj):
         "rating_23": 0,
         "rating_24": 0
     }
-
     for i in obj:
         count_dict['rating_' + str(i)] += 1
-
     return count_dict
 
 
@@ -70,10 +78,9 @@ class ClassifierDataset(Dataset):
         return self.X_data.shape[0]
 
 
-# функции метрик
 def multi_acc(y_pred, y_test):
     y_pred_softmax = torch.log_softmax(y_pred, dim=1)
-    _, y_pred_tags = torch.max(y_pred_softmax, 1)
+    _, y_pred_tags = torch.max(y_pred_softmax, dim=1)
 
     correct_pred = (y_pred_tags == y_test).float()
     acc = correct_pred.sum() / len(correct_pred)
@@ -83,7 +90,7 @@ def multi_acc(y_pred, y_test):
     return acc
 
 
-def CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, BATCH_SIZE, LEARNING_RATE, EPOCHS, fnamesavegraph):
+def CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, BATCH_SIZE, LEARNING_RATE, EPOCHS, fNameSaveGraph):
     train_dataset = ClassifierDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long())
     val_daatset = ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).long())
     test_daatset = ClassifierDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).long())
@@ -116,7 +123,7 @@ def CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, BATCH_SIZE, LEAR
     print(device)
 
     input_dim = X_train.shape[1]
-    output_dim = 25
+    output_dim = globalConstants.NUM_CLASSES
     model = TabNetModelClassification(
         input_dim,
         output_dim,
@@ -200,15 +207,44 @@ def CreateModel(X_train, y_train, X_test, y_test, X_val, y_val, BATCH_SIZE, LEAR
     train_val_loss_df = pd.DataFrame.from_dict(lossy_stats).reset_index().\
         melt(id_vars=['index']).rename(columns={'index': 'epochs'})
 
+    # мб тут ретёрн фсс и лосс
+
     fig, ax = plt.subplots()
     sns.lineplot(data=train_val_acc_df, x="epochs", y="value", hue="variable").set_title(
         'Train-Val Accuracy/Epoch')
-    fig.savefig(fnamesavegraph + '/graph_' + 'train_val_acc_df.png')
+    fig.savefig(fNameSaveGraph + '/graph_' + 'train_val_acc_df.png')
     plt.close()
 
     fig, ax = plt.subplots()
     sns.lineplot(data=train_val_loss_df, x="epochs", y="value", hue="variable").set_title(
         'Train-Val Loss/Epoch')
-    fig.savefig(fnamesavegraph + '/graph_' + 'train_val_loss_df.png')
+    fig.savefig(fNameSaveGraph + '/graph_' + 'train_val_loss_df.png')
     plt.close()
+
+    y_pred_list = []
+    with torch.no_grad():
+        model.eval()
+        for X_batch, _ in test_loader:
+            X_batch = X_batch.to(device)
+            y_test_pred = model(X_batch)
+            _, y_pred_tags = torch.max(y_test_pred, dim=1)
+            y_pred_list.append(y_pred_tags.cpu().numpy())
+    y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
+    confusion_matrix_df = pd.DataFrame(confusion_matrix(y_test, y_pred_list)).rename(columns=idx2class, index=idx2class)
+
+    fig, ax = plt.subplots()
+    sns.heatmap(confusion_matrix_df, annot=True)
+    fig.savefig(globalConstants.fnamesavegraph + '/graph_' + 'tabnet_' + 'matrix.png')
+    plt.close()
+
+    prfs = precision_recall_fscore_support(y_test, y_pred_list)
+    precisions = prfs[0]
+    recalls = prfs[1]  # Specificity in Binary Classification
+    fbeta_scores = prfs[2]
+    supports = prfs[3]
+
+    a = 0
+    #return y_pred_list, train_val_acc_df, train_val_loss_df
+
+
 

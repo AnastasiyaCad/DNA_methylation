@@ -4,11 +4,12 @@ import os.path
 import pickle5 as pickle
 
 
-path_files = '/common/home/nerobova_a/DataMethy/Data/'
-path_27k = '/common/home/nerobova_a/DataMethy/Data/ann27k.txt'
-path_450k = '/common/home/nerobova_a/DataMethy/Data/ann450k.txt'
-path_850k = '/common/home/nerobova_a/DataMethy/Data/ann850k.txt'
-path_matrixBetaValue = '/common/home/nerobova_a/DataMethy/MatrixBetaNoNanNoBadCpGandPerson.pkl'
+path_files = r'E:\MLTCGAdata\RSrudioStandartIllumuna'
+path_27k = r'E:\MLTCGAdata\RSrudioStandartIllumuna\ann27k.txt'
+path_450k = r'E:\MLTCGAdata\RSrudioStandartIllumuna\ann450k.txt'
+path_850k = r'E:\MLTCGAdata\RSrudioStandartIllumuna\ann850k.txt'
+path_matrixBetaValue = r'E:\MLTCGAdata\MatrixCpGAllCancer\MatrixCpGAllCancer.pkl'
+path_markerList = r'E:\MLTCGAdata\MatrixCpGAllCancer\markerList.txt'
 
 
 # считывание txt файла в DataFrame
@@ -18,6 +19,12 @@ def readCSVToDataFrame(path):
 
 def readPklToDataFrame(path):
     return pd.read_pickle(path)
+
+
+def readTxtToList(path, ras):
+    text_file = open(path, "r")
+    lines = text_file.read().split(ras)
+    return lines
 
 
 # загрузка трех массивов CpG сайтов (27к, 450k, 850k)
@@ -69,14 +76,11 @@ def getDictCpGToNumColumns(headMatrixBetaValue):
         return dictCpGToNumColumns
 
 
-# создание новой матрицы меньшей размерности
-# перебор элементов массива из объединенных стандартов
-# проверяется, есть ли данные эелементы в массиве отфильтрованного стандарта 450к TCGA
-# из исходной матрицы бета значений выбираются только те столбцы CpG, что есть в объединенном массиве
 def GetNewBetaMatrixCrossingStandards():
     arrayDataCpGCross = getCrossingStandards()
-    matrixBetaValue = readPklToDataFrame(path_matrixBetaValue)
-    headMatrixBetaValue = list(matrixBetaValue.columns.values)
+    #matrixBetaValue = readPklToDataFrame(path_matrixBetaValue)
+    #headMatrixBetaValue = list(matrixBetaValue.columns.values)
+    headMatrixBetaValue = readTxtToList(path_files + '/colums_matrix.txt', '\n')
     dictCpGToNumColumns = getDictCpGToNumColumns(headMatrixBetaValue)
 
     listNumColumnNewMatrix = []
@@ -85,12 +89,13 @@ def GetNewBetaMatrixCrossingStandards():
     for nameCpG in arrayDataCpGCross:
         if nameCpG in listCpG:
             listNumColumnNewMatrix.append(dictCpGToNumColumns[nameCpG])
-    
+
     print("Columns of new matrix: ", len(listNumColumnNewMatrix))
 
-    matrixBetaValueDimReduction = matrixBetaValue[matrixBetaValue.columns[listNumColumnNewMatrix]]
-    matrixBetaValueDimReduction.to_pickle(path_files + '/matrixBetaValueDimReduction.pkl')
-    # сохранение списка CpG старой матрицы
+    # matrixBetaValueDimReduction = matrixBetaValue.drop(matrixBetaValue.columns[listNumColumnNewMatrix], axis=1)
+    #print(matrixBetaValueDimReduction.head)
+    #matrixBetaValueDimReduction.to_pickle(path_files + '/matrixBetaValueDimReduction.pkl')
+
     # headMatrixBetaValue.to_csv(path_files + '/columnsMatrixBeta.txt', index=False, header=None)
 
 
